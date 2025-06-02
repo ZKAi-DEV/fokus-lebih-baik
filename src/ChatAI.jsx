@@ -176,7 +176,7 @@ function Dashboard() {
           @media (max-width: 700px) {
             .dashboard-container { padding: 8px !important; }
             .dashboard-table { display: block; width: 100%; overflow-x: auto; }
-            .dashboard-table table { min-width: 600px; }
+            .dashboard-table table { min-width: 900px; }
             .dashboard-btn, .dashboard-input { width: 100% !important; margin-bottom: 8px; box-sizing: border-box; }
           }
         `}</style>
