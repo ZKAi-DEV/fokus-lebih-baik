@@ -27,7 +27,7 @@ function Login() {
   };
 
   return (
-    <div className="login-container">
+    <div className="login-container" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
       <div className="login-card">
         <h2 style={{ textAlign: 'center' }}>{isRegister ? 'Daftar' : 'Login'}</h2>
         <form onSubmit={handleSubmit}>
@@ -60,7 +60,7 @@ function Login() {
           )}
         </div>
       </div>
-      <div style={{ marginTop: 32, textAlign: 'center', fontSize: 14 }}>
+      <div style={{ marginTop: 24, textAlign: 'center', fontSize: 14 }}>
         Dibuat oleh <b>Yusuf Ubaidilah Musta'in</b> <br />
         <a href="mailto:yusuubaidilahmustain@gmail.com" target="_blank" rel="noopener noreferrer">Email</a> |{' '}
         <a href="https://www.linkedin.com/in/yusufum/" target="_blank" rel="noopener noreferrer">LinkedIn</a> |{' '}
