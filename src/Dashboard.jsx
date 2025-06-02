@@ -171,7 +171,7 @@ function Dashboard() {
   return (
     <>
       <ChatAI />
-      <div style={{ width: '100vw', minHeight: '100vh', padding: '32px 2vw 32px 2vw', boxSizing: 'border-box', background: '#fafbfc', overflowX: 'hidden' }}>
+      <div style={{ width: '100vw', minHeight: '100vh', padding: '56px 2vw 32px 2vw', boxSizing: 'border-box', background: '#fafbfc', overflowX: 'hidden' }}>
         <style>{`
           @media (max-width: 700px) {
             .dashboard-container { padding: 8px !important; }
