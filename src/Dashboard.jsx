@@ -243,6 +243,13 @@ function Dashboard() {
           + Tambah Baris
         </button>
       </div>
+      {/* Footer Kredit */}
+      <footer style={{ textAlign: 'center', marginTop: 32, fontSize: 14, color: '#555' }}>
+        Dibuat oleh <b>Yusuf Ubaidilah Musta'in</b> |
+        <a href="mailto:yusuubaidilahmustain@gmail.com" target="_blank" rel="noopener noreferrer"> Email</a> |
+        <a href="https://www.linkedin.com/in/yusufum/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> |
+        <a href="https://www.instagram.com/saya_humoris/" target="_blank" rel="noopener noreferrer"> Instagram</a>
+      </footer>
     </>
   );
 }
