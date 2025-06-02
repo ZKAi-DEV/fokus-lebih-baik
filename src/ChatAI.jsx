@@ -201,7 +201,7 @@ function ChatAI() {
       style={{
         maxWidth: 700,
         width: '100%',
-        margin: '32px auto 32px auto',
+        margin: '0 auto 32px auto',
         padding: '24px 16px 16px 16px',
         border: '1px solid #eee',
         borderRadius: 8,
