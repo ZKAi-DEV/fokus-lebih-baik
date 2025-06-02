@@ -1,309 +1,250 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
+import { collection, getDocs, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import ChatAI from './ChatAI';
 
-function ChatAI() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_key') || '');
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
+function Dashboard() {
+  const [rows, setRows] = useState([{ task: '', status: '', hari: '', tanggal: '' }]);
   const [user, setUser] = useState(null);
-  const [listening, setListening] = useState(false);
-  const chatContainerRef = useRef(null);
-  const recognitionRef = useRef(null);
-  const voiceLoopRef = useRef(false);
-  const [selectedVoice, setSelectedVoice] = useState(null);
-  const [voices, setVoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    return now.toISOString().slice(0, 10); // YYYY-MM-DD
+  });
+  const [aiKey, setAiKey] = useState(() => localStorage.getItem('openai_key') || '');
+  const [aiLoading, setAiLoading] = useState(false);
 
-  // Load chat history dari Firestore saat user login
+  // Helper untuk dapatkan hari dari tanggal
+  const getHari = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('id-ID', { weekday: 'long' });
+  };
+
+  // Ambil user yang sedang login
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        const docRef = doc(db, 'users', u.uid, 'chatHistory', 'history');
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          setMessages(snap.data().messages || []);
-        }
-      }
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) setUser(u);
+      else setUser(null);
     });
     return () => unsub();
   }, []);
 
-  // Simpan chat history ke Firestore setiap kali messages berubah
+  // Hapus data lebih dari 7 hari
   useEffect(() => {
-    const saveHistory = async () => {
-      if (user) {
-        const docRef = doc(db, 'users', user.uid, 'chatHistory', 'history');
-        await setDoc(docRef, { messages });
-      }
-    };
-    if (user && messages.length > 0) saveHistory();
-  }, [messages, user]);
-
-  // Auto scroll ke bawah setiap ada pesan baru
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  // Ambil daftar voice saat komponen mount
-  useEffect(() => {
-    const updateVoices = () => {
-      const vs = window.speechSynthesis.getVoices();
-      setVoices(vs);
-      // Hanya set default voice jika selectedVoice masih null
-      if (selectedVoice === null && vs.length > 0) {
-        const v =
-          vs.find(v => v.lang.startsWith('id') && v.name.toLowerCase().includes('female')) ||
-          vs.find(v => v.lang.startsWith('id') && v.name.toLowerCase().includes('perempuan')) ||
-          vs.find(v => v.lang.startsWith('id') && v.gender === 'female') ||
-          vs.find(v => v.lang.startsWith('id')) ||
-          vs.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female')) ||
-          vs.find(v => v.lang.startsWith('en') && v.gender === 'female') ||
-          vs.find(v => v.lang.startsWith('en')) ||
-          vs[0];
-        setSelectedVoice(v?.name || vs[0].name);
-      }
-    };
-    updateVoices();
-    window.speechSynthesis.onvoiceschanged = updateVoices;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
-  }, [selectedVoice]);
-
-  // Text-to-Speech untuk balasan AI (pakai voice yang dipilih)
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg.role === 'assistant' && voiceLoopRef.current) {
-      const utter = new window.SpeechSynthesisUtterance(lastMsg.content);
-      utter.lang = 'id-ID';
-      const vs = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
-      utter.voice = vs.find(v => v.name === selectedVoice) || vs[0];
-      utter.onend = () => {
-        if (voiceLoopRef.current) startListening();
-      };
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utter);
-    }
-  }, [messages, voices, selectedVoice]);
-
-  const handleApiKeyChange = (e) => {
-    setApiKey(e.target.value);
-    localStorage.setItem('openai_key', e.target.value);
-  };
-
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || !apiKey.trim()) return;
-    const newMessages = [...messages, { role: 'user', content: input }];
-    setMessages(newMessages);
-    setLoading(true);
-    try {
-      // Kirim seluruh history chat ke Gemini
-      const geminiMessages = newMessages.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.content }]
+    if (!user) return;
+    const cleanOldData = async () => {
+      const colRef = collection(db, 'users', user.uid, 'tasks');
+      const snap = await getDocs(colRef);
+      const today = new Date();
+      await Promise.all(snap.docs.map(async (d) => {
+        const tgl = d.id; // id = YYYY-MM-DD
+        const diff = (today - new Date(tgl)) / (1000 * 60 * 60 * 24);
+        if (diff > 7) await deleteDoc(doc(colRef, tgl));
       }));
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: geminiMessages
-          })
-        }
-      );
-      const data = await res.json();
-      const aiMsg = data.candidates?.[0]?.content?.parts?.[0]?.text || 'AI tidak bisa membalas.';
-      setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
-      setInput('');
-    } catch (err) {
-      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi AI.' }]);
-    }
-    setLoading(false);
-  };
+    };
+    cleanOldData();
+  }, [user]);
 
-  // Voice chat: SpeechRecognition
-  const startListening = () => {
-    if (!('webkitSpeechRecognition' in window)) {
-      alert('Browser kamu belum support voice input!');
+  // Fungsi generate challenge AI otomatis
+  const generateChallengeAI = async (tanggal) => {
+    if (!aiKey) {
+      alert('Masukkan Gemini API Key di chat AI dulu!');
       return;
     }
-    setListening(true);
-    recognitionRef.current = new window.webkitSpeechRecognition();
-    recognitionRef.current.lang = 'id-ID';
-    recognitionRef.current.interimResults = false;
-    recognitionRef.current.maxAlternatives = 1;
-    recognitionRef.current.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setInput('');
-      setListening(false);
-      sendVoiceMessage(transcript);
-    };
-    recognitionRef.current.onend = () => {
-      setListening(false);
-    };
-    recognitionRef.current.start();
-  };
-
-  const stopListening = () => {
-    setListening(false);
-    if (recognitionRef.current) recognitionRef.current.stop();
-  };
-
-  // Loop voice chat
-  const startVoiceChat = () => {
-    voiceLoopRef.current = true;
-    startListening();
-  };
-  const stopVoiceChat = () => {
-    voiceLoopRef.current = false;
-    stopListening();
-    window.speechSynthesis.cancel();
-  };
-
-  // Kirim pesan dari suara
-  const sendVoiceMessage = async (text) => {
-    if (!text.trim() || !apiKey.trim()) return;
-    const newMessages = [...messages, { role: 'user', content: text }];
-    setMessages(newMessages);
-    setLoading(true);
+    setAiLoading(true);
     try {
-      const geminiMessages = newMessages.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.content }]
-      }));
+      const prompt = `Buatkan 5 challenge harian bertema disiplin dan pengembangan diri untuk tanggal ${tanggal}, singkat, actionable, dan berbeda dari hari lain. Format: satu challenge per baris, tanpa penomoran.`;
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${aiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: geminiMessages
+            contents: [
+              { parts: [{ text: prompt }] }
+            ]
           })
         }
       );
       const data = await res.json();
-      const aiMsg = data.candidates?.[0]?.content?.parts?.[0]?.text || 'AI tidak bisa membalas.';
-      setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const challenges = text
+        .split('\n')
+        .map(line => line.replace(/^[-*\d.\s]+/, '').trim())
+        .filter(Boolean)
+        .slice(0, 5);
+      setRows(challenges.map(ch => ({ task: ch, status: '', hari: getHari(tanggal), tanggal })));
     } catch (err) {
-      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi AI.' }]);
+      alert('Gagal generate challenge dari AI.');
     }
-    setLoading(false);
+    setAiLoading(false);
   };
 
+  // Load data dari Firestore untuk tanggal yang dipilih
+  useEffect(() => {
+    if (!user || !selectedDate) return;
+    setLoading(true);
+    const fetchData = async () => {
+      const docRef = doc(db, 'users', user.uid, 'tasks', selectedDate);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const loadedRows = (snap.data().rows || []).filter(row => row.task || row.status);
+        setRows(loadedRows.length > 0 ? loadedRows : [{ task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }]);
+      } else {
+        setRows([{ task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }]);
+      }
+      setLoading(false);
+    };
+    fetchData();
+    // eslint-disable-next-line
+  }, [user, selectedDate]);
+
+  // Simpan data ke Firestore setiap kali rows berubah
+  useEffect(() => {
+    if (!user || !selectedDate || loading) return;
+    // Cegah simpan data jika rows bukan untuk tanggal aktif
+    if (rows.length > 0 && rows[0].tanggal !== selectedDate) return;
+    const saveData = async () => {
+      const docRef = doc(db, 'users', user.uid, 'tasks', selectedDate);
+      await setDoc(docRef, { rows });
+    };
+    saveData();
+    // eslint-disable-next-line
+  }, [rows, user, selectedDate, loading]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAiKey(localStorage.getItem('openai_key') || '');
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Handler input baris
+  const handleChange = (idx, field, value) => {
+    const newRows = [...rows];
+    newRows[idx][field] = value;
+    // Pastikan tanggal baris selalu sama dengan selectedDate
+    newRows[idx].tanggal = selectedDate;
+    newRows[idx].hari = getHari(selectedDate);
+    setRows(newRows);
+  };
+
+  // Handler tambah baris
+  const addRow = () => {
+    setRows([
+      ...rows,
+      { task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }
+    ]);
+  };
+
+  // Handler hapus baris
+  const removeRow = (idx) => {
+    setRows(rows.filter((_, i) => i !== idx));
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    window.location.href = '/';
+  };
+
+  const handleDownload = () => {
+    let content = 'Hari\tTanggal\tTask/Challenge\tStatus\n';
+    rows.forEach(row => {
+      content += `${row.hari || '-'}\t${row.tanggal || '-'}\t${row.task || '-'}\t${row.status || '-'}\n`;
+    });
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fokus-lebih-baik-${selectedDate}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Tombol manual tetap ada, panggil generateChallengeAI(selectedDate)
+  const handleGenerateAI = () => generateChallengeAI(selectedDate);
+
+  if (!user) return <div style={{position:'fixed',left:0,top:0,width:'100vw',height:'100vh',display:'flex',justifyContent:'center',alignItems:'center',fontSize:32,fontWeight:600,color:'#234',zIndex:999}}>Loading...</div>;
+  if (loading) return <div style={{position:'fixed',left:0,top:0,width:'100vw',height:'100vh',display:'flex',justifyContent:'center',alignItems:'center',fontSize:32,fontWeight:600,color:'#234',zIndex:999}}>Memuat data...</div>;
+
   return (
-    <div
-      style={{
-        maxWidth: 700,
-        width: '100%',
-        margin: '500px auto 32px auto',
-        padding: '24px 16px 16px 16px',
-        border: '1px solid #eee',
-        borderRadius: 8,
-        background: '#fafbfc',
-        boxSizing: 'border-box',
-        boxShadow: '0 2px 12px 0 rgba(0,0,0,0.06)',
-      }}
-    >
-      <style>{`
-        @media (max-width: 600px) {
-          .chatai-container { padding: 8px !important; }
-          .chatai-input, .chatai-btn { width: 100% !important; box-sizing: border-box; }
-          .chatai-main { margin-top: 32px !important; }
-        }
-      `}</style>
-      <div className="chatai-main">
-        <div className="chatai-container" style={{ marginBottom: 8 }}>
-          <b>Chat AI (Motivasi & Saran Disiplin)</b>
+    <>
+      <ChatAI />
+      <div style={{ width: '100vw', minHeight: '100vh', padding: '32px 2vw 32px 2vw', boxSizing: 'border-box', background: '#fafbfc', overflowX: 'hidden' }}>
+        <style>{`
+          @media (max-width: 700px) {
+            .dashboard-container { padding: 8px !important; }
+            .dashboard-table { display: block; width: 100%; overflow-x: auto; }
+            .dashboard-table table { min-width: 600px; }
+            .dashboard-btn, .dashboard-input { width: 100% !important; margin-bottom: 8px; box-sizing: border-box; }
+          }
+        `}</style>
+        <div className="dashboard-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <h2 style={{ textAlign: 'center', flex: 1, minWidth: 180 }}>Fokus Lebih Baik</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} style={{marginRight:0, padding:6, borderRadius:4, border:'1px solid #bbb', minWidth:120}} className="dashboard-input" />
+            <button onClick={handleGenerateAI} style={{ background:'#43a047', color:'#fff', border:'none', borderRadius:4, padding:'8px 16px', cursor:'pointer', marginRight:0, minWidth:120 }} disabled={aiLoading} className="dashboard-btn">
+              {aiLoading ? 'Mengisi...' : 'Generate Challenge AI'}
+            </button>
+            <button onClick={handleDownload} style={{ background:'#1976d2', color:'#fff', border:'none', borderRadius:4, padding:'8px 16px', cursor:'pointer', marginRight:0, minWidth:100 }} className="dashboard-btn">Simpan</button>
+            <button onClick={handleLogout} style={{ background:'#eee', color:'#1976d2', border:'none', borderRadius:4, padding:'8px 16px', cursor:'pointer', minWidth:80 }} className="dashboard-btn">Logout</button>
+          </div>
         </div>
-        {/* Dropdown pilih voice */}
-        <div style={{ marginBottom: 8 }}>
-          <label style={{ fontWeight: 500, marginRight: 8 }}>Pilih Suara AI:</label>
-          <select
-            value={selectedVoice || ''}
-            onChange={e => setSelectedVoice(e.target.value)}
-            style={{ padding: 6, borderRadius: 4, border: '1px solid #bbb', minWidth: 180 }}
-          >
-            {voices.map((v, i) => (
-              <option key={v.name + i} value={v.name}>
-                {v.name} ({v.lang})
-              </option>
-            ))}
-          </select>
+        <div className="dashboard-table" style={{ width: '100%', overflowX: 'auto', marginBottom: 16 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+            <thead>
+              <tr style={{ background: '#f5f5f5' }}>
+                <th style={{ padding: 8, border: '1px solid #eee' }}>Hari</th>
+                <th style={{ padding: 8, border: '1px solid #eee' }}>Tanggal</th>
+                <th style={{ padding: 8, border: '1px solid #eee' }}>Task/Challenge</th>
+                <th style={{ padding: 8, border: '1px solid #eee' }}>Status</th>
+                <th style={{ padding: 8, border: '1px solid #eee' }}>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={idx}>
+                  <td style={{ padding: 8, border: '1px solid #eee', textAlign: 'center' }}>
+                    {row.hari || '-'}
+                  </td>
+                  <td style={{ padding: 8, border: '1px solid #eee', textAlign: 'center' }}>
+                    {row.tanggal || '-'}
+                  </td>
+                  <td style={{ padding: 8, border: '1px solid #eee' }}>
+                    <input
+                      type="text"
+                      value={row.task}
+                      onChange={e => handleChange(idx, 'task', e.target.value)}
+                      style={{ width: '100%' }}
+                      placeholder="Tulis tugas/challenge..."
+                      className="dashboard-input"
+                    />
+                  </td>
+                  <td style={{ padding: 8, border: '1px solid #eee' }}>
+                    <input
+                      type="text"
+                      value={row.status}
+                      onChange={e => handleChange(idx, 'status', e.target.value)}
+                      style={{ width: '100%' }}
+                      placeholder="Status (misal: selesai, proses)"
+                      className="dashboard-input"
+                    />
+                  </td>
+                  <td style={{ padding: 8, border: '1px solid #eee', textAlign: 'center' }}>
+                    <button onClick={() => removeRow(idx)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>Hapus</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <input
-          className="chatai-input"
-          type="password"
-          placeholder="Masukkan Gemini API Key..."
-          value={apiKey}
-          onChange={handleApiKeyChange}
-          style={{ width: '100%', marginBottom: 8, padding: 8, borderRadius: 4, border: '1px solid #bbb' }}
-        />
-        <div
-          ref={chatContainerRef}
-          style={{ maxHeight: 180, overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: 4, padding: 8, marginBottom: 8 }}
-        >
-          {messages.length === 0 && <div style={{ color: '#888' }}>Belum ada chat. Tanyakan apapun ke AI!</div>}
-          {messages.map((msg, i) => (
-            <div key={i} style={{ margin: '6px 0', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
-              <span style={{ background: msg.role === 'user' ? '#e3f2fd' : '#e8f5e9', padding: '6px 12px', borderRadius: 8, display: 'inline-block', wordBreak: 'break-word', maxWidth: '100%' }}>{msg.content}</span>
-            </div>
-          ))}
-        </div>
-        <form onSubmit={handleSend} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input
-            className="chatai-input"
-            type="text"
-            placeholder="Tulis pesan ke AI..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            style={{ flex: 1, minWidth: 0, padding: 8, borderRadius: 4, border: '1px solid #bbb' }}
-            disabled={loading}
-          />
-          <button
-            className="chatai-btn"
-            type="submit"
-            style={{ padding: '8px 16px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, minWidth: 80 }}
-            disabled={loading}
-          >
-            {loading ? 'Mengirim...' : 'Kirim'}
-          </button>
-          <button
-            type="button"
-            onClick={listening ? stopListening : startListening}
-            style={{ padding: '8px', background: listening ? '#ff9800' : '#eee', color: '#222', border: 'none', borderRadius: 4 }}
-            disabled={loading}
-            title={listening ? 'Sedang mendengarkan...' : 'Bicara'}
-          >
-            🎤
-          </button>
-        </form>
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button
-            type="button"
-            onClick={startVoiceChat}
-            style={{ padding: '8px 16px', background: '#43a047', color: '#fff', border: 'none', borderRadius: 4 }}
-            disabled={voiceLoopRef.current || loading}
-          >
-            Mulai Ngobrol
-          </button>
-          <button
-            type="button"
-            onClick={stopVoiceChat}
-            style={{ padding: '8px 16px', background: '#e53935', color: '#fff', border: 'none', borderRadius: 4 }}
-            disabled={!voiceLoopRef.current}
-          >
-            Stop Ngobrol
-          </button>
-        </div>
+        <button onClick={addRow} style={{ padding: '8px 16px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', width: '100%', maxWidth: 200 }}>
+          + Tambah Baris
+        </button>
       </div>
-    </div>
+    </>
   );
 }
 
-export default ChatAI; 
+export default Dashboard; 
