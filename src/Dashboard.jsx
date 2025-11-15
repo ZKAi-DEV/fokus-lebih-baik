@@ -4,6 +4,10 @@ import { collection, getDocs, setDoc, doc, deleteDoc, getDoc } from 'firebase/fi
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import ChatAI from './ChatAI';
 
+// 1. Definisikan System Instruction Challenge di sini (Persona Pembuat Challenge)
+const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin. Tugas Anda adalah membuat 5 challenge harian yang relevan dengan OJT Smart Building, SNBT Teknik Elektro, dan Duolingo Jepang. Output hanya 5 baris challenge tanpa penomoran.";
+
+
 function Dashboard() {
   const [rows, setRows] = useState([{ task: '', status: '', hari: '', tanggal: '' }]);
   const [user, setUser] = useState(null);
@@ -12,7 +16,7 @@ function Dashboard() {
     const now = new Date();
     return now.toISOString().slice(0, 10); // YYYY-MM-DD
   });
-  const [aiKey, setAiKey] = useState(() => localStorage.getItem('openai_key') || '');
+  // HAPUS: const [aiKey, setAiKey] = useState(() => localStorage.getItem('openai_key') || '');
   const [aiLoading, setAiLoading] = useState(false);
 
   // Helper untuk dapatkan hari dari tanggal
@@ -46,29 +50,34 @@ function Dashboard() {
     cleanOldData();
   }, [user]);
 
-  // Fungsi generate challenge AI otomatis
+  // Fungsi generate challenge AI otomatis (sudah aman)
   const generateChallengeAI = async (tanggal) => {
-    if (!aiKey) {
-      alert('Masukkan Gemini API Key di chat AI dulu!');
-      return;
-    }
+    // HAPUS: if (!aiKey) alert('Masukkan Gemini API Key di chat AI dulu!'); return;
+
     setAiLoading(true);
     try {
+      // 2. Kirim prompt spesifik + persona ke Server
       const prompt = `Buatkan 5 challenge harian bertema disiplin dan pengembangan diri untuk tanggal ${tanggal}, singkat, actionable, dan berbeda dari hari lain. Format: satu challenge per baris, tanpa penomoran.`;
+      
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${aiKey}`,
+        '/api/gemini', // Panggil Serverless Function
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            // Mengirim prompt sebagai user message pertama
             contents: [
-              { parts: [{ text: prompt }] }
-            ]
+              { role: "user", parts: [{ text: prompt }] } 
+            ],
+            // Mengirim System Instruction ke Server
+            systemInstruction: SYSTEM_INSTRUCTION_CHALLENGE, 
           })
         }
       );
+      
       const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const text = data.text || ''; // Ambil data.text dari response server
+      
       const challenges = text
         .split('\n')
         .map(line => line.replace(/^[-*\d.\s]+/, '').trim())
@@ -113,12 +122,15 @@ function Dashboard() {
     // eslint-disable-next-line
   }, [rows, user, selectedDate, loading]);
 
+  // HAPUS LOGIC INI:
+  /*
   useEffect(() => {
     const interval = setInterval(() => {
       setAiKey(localStorage.getItem('openai_key') || '');
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+  */
 
   // Handler input baris
   const handleChange = (idx, field, value) => {
@@ -254,4 +266,4 @@ function Dashboard() {
   );
 }
 
-export default Dashboard; 
+export default Dashboard;
