@@ -1,35 +1,81 @@
-// src/ChatAI.jsx (HANYA MENERIMA PROPS DAN MENGIRIM DARI PROPS)
-
 import React, { useState, useEffect, useRef } from 'react';
-// Hapus import db, auth, doc, getDoc, setDoc, onAuthStateChanged (sudah pindah ke Dashboard)
+import { db, auth } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
-// Komponen ChatAI sekarang menerima semua data dan fungsi sebagai props
-function ChatAI({ 
-  messages, 
-  handleSend, 
-  loading, 
-  input, 
-  setInput, 
-  voices, 
-  selectedVoice, 
-  setSelectedVoice,
-  startListening,
-  stopListening,
-  startVoiceChat,
-  stopVoiceChat,
-  listening,
-  voiceLoopRef
-}) {
+// Definisikan Persona Anda di sini (System Instruction)
+const SYSTEM_INSTRUCTION = "saya adalah Yusuf. saya adalah asisten pribadi yang disiplin. Balas dengan sopan, berikan motivasi dan kritik yang jujur dan realistis berdasarkan tujuan hidup pengguna (Pendidikan,karir, bisnis Stabil). Panggil pengguna dengan sebutan 'nyonya' atau 'tuan'.";
+
+
+function ChatAI() {
+  const [input, setInput] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
+  const [listening, setListening] = useState(false);
   const chatContainerRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const voiceLoopRef = useRef(false);
+  const [selectedVoice, setSelectedVoice] = useState(null);
+  const [voices, setVoices] = useState([]);
 
-  // Auto scroll ke bawah setiap ada pesan baru (tetap di sini)
+  // Load chat history & user
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        const docRef = doc(db, 'users', u.uid, 'chatHistory', 'history');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          setMessages(snap.data().messages || []);
+        }
+      }
+    });
+    return () => unsub(); 
+  }, []);
+
+  // Simpan chat history ke Firestore setiap kali messages berubah
+  useEffect(() => {
+    const saveHistory = async () => {
+      if (user) {
+        const docRef = doc(db, 'users', user.uid, 'chatHistory', 'history');
+        await setDoc(docRef, { messages });
+      }
+    };
+    if (user && messages.length > 0) saveHistory();
+  }, [messages, user]);
+
+  // Auto scroll ke bawah setiap ada pesan baru
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // Logika Speech Synthesis & Voice Command (dikurangi, disederhanakan)
+  // Ambil daftar voice saat komponen mount (Logika voice tetap sama)
+  useEffect(() => {
+    const updateVoices = () => {
+      const vs = window.speechSynthesis.getVoices();
+      setVoices(vs);
+      if (selectedVoice === null && vs.length > 0) {
+        const v =
+          vs.find(v => v.lang.startsWith('id') && v.name.toLowerCase().includes('female')) ||
+          vs.find(v => v.lang.startsWith('id') && v.name.toLowerCase().includes('perempuan')) ||
+          vs.find(v => v.lang.startsWith('id') && v.gender === 'female') ||
+          vs.find(v => v.lang.startsWith('id')) ||
+          vs.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female')) ||
+          vs.find(v => v.lang.startsWith('en') && v.gender === 'female') ||
+          vs.find(v => v.lang.startsWith('en')) ||
+          vs[0];
+        setSelectedVoice(v?.name || vs[0].name);
+      }
+    };
+    updateVoices();
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, [selectedVoice]);
+
+  // Text-to-Speech untuk balasan AI (pakai voice yang dipilih)
   useEffect(() => {
     if (messages.length === 0) return;
     const lastMsg = messages[messages.length - 1];
@@ -44,9 +90,128 @@ function ChatAI({
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utter);
     }
-  }, [messages, voices, selectedVoice, startListening]);
-  
-  // HAPUS SEMUA LOGIKA API KEY, FIREBASE, DAN FUNGSI UTAMA DI SINI
+  }, [messages, voices, selectedVoice]);
+
+  // FUNGSI UTAMA PENGIRIMAN PESAN
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!input.trim()) return; 
+
+    const newMessages = [...messages, { role: 'user', content: input }];
+    setMessages(newMessages);
+    setLoading(true);
+    
+    try {
+      // PERBAIKAN FINAL: Mapping role 'assistant' ke 'model'
+      const geminiMessages = newMessages.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user', 
+        parts: [{ text: msg.content }]
+      }));
+      
+      const res = await fetch('/api/gemini', 
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: geminiMessages,
+            systemInstruction: SYSTEM_INSTRUCTION, 
+          })
+        }
+      );
+      
+      const data = await res.json();
+      
+      if (data.error) {
+        setMessages([...newMessages, { role: 'assistant', content: `Gagal menghubungi AI. Pesan error server: ${data.error}` }]);
+      } else {
+        const aiMsg = data.text || 'AI tidak bisa membalas.';
+        setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+        setInput('');
+      }
+    } catch (err) {
+      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi Serverless Function.' }]);
+    }
+    setLoading(false);
+  };
+
+  // Voice chat: SpeechRecognition
+  const startListening = () => {
+    if (!('webkitSpeechRecognition' in window)) {
+      alert('Browser kamu belum support voice input!');
+      return;
+    }
+    setListening(true);
+    recognitionRef.current = new window.webkitSpeechRecognition();
+    recognitionRef.current.lang = 'id-ID';
+    recognitionRef.current.interimResults = false;
+    recognitionRef.current.maxAlternatives = 1;
+    recognitionRef.current.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setInput('');
+      setListening(false);
+      sendVoiceMessage(transcript);
+    };
+    recognitionRef.current.onend = () => {
+      setListening(false);
+    };
+    recognitionRef.current.start();
+  };
+
+  const stopListening = () => {
+    setListening(false);
+    if (recognitionRef.current) recognitionRef.current.stop();
+  };
+
+  // Loop voice chat
+  const startVoiceChat = () => {
+    voiceLoopRef.current = true;
+    startListening();
+  };
+  const stopVoiceChat = () => {
+    voiceLoopRef.current = false;
+    stopListening();
+    window.speechSynthesis.cancel();
+  };
+
+  // Kirim pesan dari suara
+  const sendVoiceMessage = async (text) => {
+    if (!text.trim()) return; 
+    
+    const newMessages = [...messages, { role: 'user', content: text }];
+    setMessages(newMessages);
+    setLoading(true);
+    
+    try {
+      // PERBAIKAN FINAL: Mapping role 'assistant' ke 'model'
+      const geminiMessages = newMessages.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user', 
+        parts: [{ text: msg.content }]
+      }));
+      
+      const res = await fetch('/api/gemini', 
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: geminiMessages,
+            systemInstruction: SYSTEM_INSTRUCTION, 
+          })
+        }
+      );
+      
+      const data = await res.json();
+      
+      if (data.error) {
+        setMessages([...newMessages, { role: 'assistant', content: `Gagal menghubungi AI. Pesan error server: ${data.error}` }]);
+      } else {
+        const aiMsg = data.text || 'AI tidak bisa membalas.';
+        setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+      }
+    } catch (err) {
+      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi Serverless Function.' }]);
+    }
+    setLoading(false);
+  };
 
   return (
     <div
