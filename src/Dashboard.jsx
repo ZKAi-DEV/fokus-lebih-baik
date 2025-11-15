@@ -57,7 +57,7 @@ function Dashboard() {
     setAiLoading(true);
     try {
       // Kirim prompt spesifik + persona ke Server
-      const prompt = `Buatkan 5 challenge harian bertema disiplin dan pengembangan diri untuk tanggal ${tanggal}, singkat, actionable, dan berbeda dari hari lain. Format: satu challenge per baris, tanpa penomoran.`;
+      const prompt = `Buatkan 5 challenge harian bertema disiplin dan pengembangan diri harian yang relevan sesuai kebutuhan pengguna yang sedang di bicarakan di ChatAI entah itu pendidikan, karir atau bisnis untuk tanggal ${tanggal}, singkat, actionable, dan berbeda dari hari lain. Format: satu challenge per baris, tanpa penomoran.`;
       
       const res = await fetch(
         '/api/gemini', // Panggil Serverless Function
