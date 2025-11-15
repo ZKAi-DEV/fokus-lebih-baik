@@ -8,7 +8,6 @@ const SYSTEM_INSTRUCTION = "Anda adalah Yusuf. Anda adalah asisten pribadi yang 
 
 
 function ChatAI() {
-  // HAPUS: const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_key') || '');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -32,7 +31,6 @@ function ChatAI() {
         }
       }
     });
-    // HAPUS logic interval key
     return () => unsub(); 
   }, []);
 
@@ -94,12 +92,9 @@ function ChatAI() {
     }
   }, [messages, voices, selectedVoice]);
 
-  // HAPUS FUNGSI handleApiKeyChange
-
   // FUNGSI UTAMA PENGIRIMAN PESAN
   const handleSend = async (e) => {
     e.preventDefault();
-    // Hapus pengecekan API Key, karena sudah di server:
     if (!input.trim()) return; 
 
     const newMessages = [...messages, { role: 'user', content: input }];
@@ -107,19 +102,19 @@ function ChatAI() {
     setLoading(true);
     
     try {
-      // Kirim seluruh history chat dan System Instruction ke Serverless Function
+      // PERBAIKAN FINAL: Mapping role 'assistant' ke 'model'
       const geminiMessages = newMessages.map(msg => ({
-        role: msg.role,
+        role: msg.role === 'assistant' ? 'model' : 'user', 
         parts: [{ text: msg.content }]
       }));
       
-      const res = await fetch('/api/gemini', // Panggil endpoint serverless yang aman
+      const res = await fetch('/api/gemini', 
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: geminiMessages,
-            systemInstruction: SYSTEM_INSTRUCTION, // Mengirim persona & memory
+            systemInstruction: SYSTEM_INSTRUCTION, 
           })
         }
       );
@@ -145,9 +140,6 @@ function ChatAI() {
       alert('Browser kamu belum support voice input!');
       return;
     }
-    // Hapus pengecekan API Key di sini:
-    // if (!apiKey.trim()) return; 
-    
     setListening(true);
     recognitionRef.current = new window.webkitSpeechRecognition();
     recognitionRef.current.lang = 'id-ID';
@@ -183,7 +175,6 @@ function ChatAI() {
 
   // Kirim pesan dari suara
   const sendVoiceMessage = async (text) => {
-    // Hapus pengecekan API Key di sini:
     if (!text.trim()) return; 
     
     const newMessages = [...messages, { role: 'user', content: text }];
@@ -191,18 +182,19 @@ function ChatAI() {
     setLoading(true);
     
     try {
+      // PERBAIKAN FINAL: Mapping role 'assistant' ke 'model'
       const geminiMessages = newMessages.map(msg => ({
-        role: msg.role,
+        role: msg.role === 'assistant' ? 'model' : 'user', 
         parts: [{ text: msg.content }]
       }));
       
-      const res = await fetch('/api/gemini', // Panggil endpoint serverless yang aman
+      const res = await fetch('/api/gemini', 
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: geminiMessages,
-            systemInstruction: SYSTEM_INSTRUCTION, // Mengirim persona & memory
+            systemInstruction: SYSTEM_INSTRUCTION, 
           })
         }
       );
