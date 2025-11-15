@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
-import { collection, getDocs, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, getDocs, setDoc, doc, deleteDoc, getDoc, signOut } from 'firebase/firestore';
 import ChatAI from './ChatAI';
+import { onAuthStateChanged } from 'firebase/auth';
 
-// 1. Definisikan System Instruction Challenge di sini (Persona Pembuat Challenge)
+// Definisikan System Instruction Challenge di sini (Persona Pembuat Challenge)
 const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin. Tugas Anda adalah membuat 5 challenge harian yang relevan dengan OJT Smart Building, SNBT Teknik Elektro, dan Duolingo Jepang. Output hanya 5 baris challenge tanpa penomoran.";
 
 
@@ -122,7 +122,7 @@ function Dashboard() {
     // eslint-disable-next-line
   }, [rows, user, selectedDate, loading]);
 
-  // HAPUS LOGIC INI:
+  // HAPUS LOGIC INI (aiKey localStorage):
   /*
   useEffect(() => {
     const interval = setInterval(() => {
@@ -156,7 +156,8 @@ function Dashboard() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    // 6. Menggunakan signOut yang benar dari 'firebase/auth'
+    await signOut(auth); 
     window.location.href = '/';
   };
 
