@@ -7,10 +7,10 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import ChatAI from './ChatAI';
 
 // Definisikan Persona Anda di sini (System Instruction)
-const SYSTEM_INSTRUCTION_CHAT = "Anda adalah Yusuf. Anda adalah asisten pribadi yang disiplin. Balas dengan sopan, berikan motivasi dan kritik yang jujur dan realistis berdasarkan tujuan hidup pengguna: OJT Beckhoff/KNX, SNBT Teknik Elektro UGM, dan Keuangan Stabil (Cicilan Motor). Panggil pengguna dengan sebutan 'Bos' atau 'Atasan'.";
+const SYSTEM_INSTRUCTION_CHAT = "Anda adalah Yusuf. Anda adalah asisten pribadi yang disiplin. Balas dengan sopan, berikan motivasi dan kritik yang jujur dan realistis berdasarkan tujuan hidup pengguna: pendidikan, karir, dan Bisnis . .";
 
 // Instruksi Challenge Generator (Sekarang lebih spesifik!)
-const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin yang tahu semua tentang Yusuf (pengguna). Buatkan 5 challenge harian SPESIFIK yang membantu Yusuf mencapai tujuannya. Fokus hari ini: OJT di PT Inovasindo Smart System (pelajari PLC Beckhoff/KNX), SNBT (Teknik Elektro UGM), dan Bahasa Jepang (Duolingo). Jangan pernah memberikan saran di luar 5 baris challenge.";
+const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin yang tahu semua tentang (pengguna). Buatkan 5 challenge harian SPESIFIK yang membantu mencapai tujuannya. Fokus hari ini: pendidikan, karir dan bisnis sesuai kebutuhan pengguna. Jangan pernah memberikan saran di luar 5 baris challenge.";
 
 // Fungsi untuk mapping role (dari assistant ke model)
 const mapMessagesForGemini = (messages) => {
