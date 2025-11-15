@@ -82,7 +82,7 @@ function ChatAI() {
     if (messages.length === 0) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role === 'assistant' && voiceLoopRef.current) {
-      const utter = new window.speechSynthesis.Utterance(lastMsg.content);
+      const utter = new window.SpeechSynthesisUtterance(lastMsg.content);
       utter.lang = 'id-ID';
       const vs = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
       utter.voice = vs.find(v => v.name === selectedVoice) || vs[0];
@@ -99,7 +99,7 @@ function ChatAI() {
   // FUNGSI UTAMA PENGIRIMAN PESAN
   const handleSend = async (e) => {
     e.preventDefault();
-    // 2. Hapus pengecekan API Key, karena sudah di server:
+    // Hapus pengecekan API Key, karena sudah di server:
     if (!input.trim()) return; 
 
     const newMessages = [...messages, { role: 'user', content: input }];
@@ -145,7 +145,7 @@ function ChatAI() {
       alert('Browser kamu belum support voice input!');
       return;
     }
-    // 3. Hapus pengecekan API Key di sini:
+    // Hapus pengecekan API Key di sini:
     // if (!apiKey.trim()) return; 
     
     setListening(true);
@@ -183,7 +183,7 @@ function ChatAI() {
 
   // Kirim pesan dari suara
   const sendVoiceMessage = async (text) => {
-    // 4. Hapus pengecekan API Key di sini:
+    // Hapus pengecekan API Key di sini:
     if (!text.trim()) return; 
     
     const newMessages = [...messages, { role: 'user', content: text }];
@@ -261,7 +261,7 @@ function ChatAI() {
             ))}
           </select>
         </div>
-        {/* 5. INPUT API KEY SUDAH DIHAPUS DARI SINI */}
+        {/* INPUT API KEY SUDAH DIHAPUS DARI SINI */}
         <div
           ref={chatContainerRef}
           style={{ maxHeight: 180, overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: 4, padding: 8, marginBottom: 8 }}
