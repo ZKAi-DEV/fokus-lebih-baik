@@ -5,7 +5,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import ChatAI from './ChatAI';
 
 // Definisikan System Instruction Challenge di sini (Persona Pembuat Challenge)
-const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin. Tugas Anda adalah membuat 5 challenge harian yang relevan dengan OJT Smart Building, SNBT Teknik Elektro, dan Duolingo Jepang. Output hanya 5 baris challenge tanpa penomoran.";
+const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin. Tugas Anda adalah membuat 5 challenge harian yang relevan sesuai kebutuhan pengguna. Output hanya 10 baris challenge tanpa penomoran.";
 
 
 function Dashboard() {
