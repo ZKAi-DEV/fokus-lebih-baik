@@ -3,7 +3,7 @@ import { db, auth } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// 1. Definisikan Persona Anda di sini (System Instruction)
+// Definisikan Persona Anda di sini (System Instruction)
 const SYSTEM_INSTRUCTION = "Anda adalah Yusuf. Anda adalah asisten pribadi yang disiplin. Balas dengan sopan, berikan motivasi dan kritik yang jujur dan realistis berdasarkan tujuan hidup pengguna (SNBT, OJT Smart Building, Keuangan Stabil). Panggil pengguna dengan sebutan 'Bos Yusuf' atau 'Bos'.";
 
 
@@ -33,8 +33,7 @@ function ChatAI() {
       }
     });
     // HAPUS logic interval key
-    // return () => { unsub(); }; 
-    return () => unsub(); // Sisakan hanya unsub Firestore
+    return () => unsub(); 
   }, []);
 
   // Simpan chat history ke Firestore setiap kali messages berubah
@@ -83,7 +82,7 @@ function ChatAI() {
     if (messages.length === 0) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role === 'assistant' && voiceLoopRef.current) {
-      const utter = new window.SpeechSynthesisUtterance(lastMsg.content);
+      const utter = new window.speechSynthesis.Utterance(lastMsg.content);
       utter.lang = 'id-ID';
       const vs = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
       utter.voice = vs.find(v => v.name === selectedVoice) || vs[0];
@@ -95,11 +94,7 @@ function ChatAI() {
     }
   }, [messages, voices, selectedVoice]);
 
-  // HAPUS FUNGSI INI:
-  // const handleApiKeyChange = (e) => {
-  //   setApiKey(e.target.value);
-  //   localStorage.setItem('openai_key', e.target.value);
-  // };
+  // HAPUS FUNGSI handleApiKeyChange
 
   // FUNGSI UTAMA PENGIRIMAN PESAN
   const handleSend = async (e) => {
@@ -130,11 +125,16 @@ function ChatAI() {
       );
       
       const data = await res.json();
-      const aiMsg = data.text || 'AI tidak bisa membalas.'; // Ambil data.text dari response server
-      setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
-      setInput('');
+      
+      if (data.error) {
+        setMessages([...newMessages, { role: 'assistant', content: `Gagal menghubungi AI. Pesan error server: ${data.error}` }]);
+      } else {
+        const aiMsg = data.text || 'AI tidak bisa membalas.';
+        setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+        setInput('');
+      }
     } catch (err) {
-      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi AI.' }]);
+      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi Serverless Function.' }]);
     }
     setLoading(false);
   };
@@ -145,6 +145,9 @@ function ChatAI() {
       alert('Browser kamu belum support voice input!');
       return;
     }
+    // 3. Hapus pengecekan API Key di sini:
+    // if (!apiKey.trim()) return; 
+    
     setListening(true);
     recognitionRef.current = new window.webkitSpeechRecognition();
     recognitionRef.current.lang = 'id-ID';
@@ -180,7 +183,7 @@ function ChatAI() {
 
   // Kirim pesan dari suara
   const sendVoiceMessage = async (text) => {
-    // 3. Hapus pengecekan API Key, karena sudah di server:
+    // 4. Hapus pengecekan API Key di sini:
     if (!text.trim()) return; 
     
     const newMessages = [...messages, { role: 'user', content: text }];
@@ -205,10 +208,15 @@ function ChatAI() {
       );
       
       const data = await res.json();
-      const aiMsg = data.text || 'AI tidak bisa membalas.';
-      setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+      
+      if (data.error) {
+        setMessages([...newMessages, { role: 'assistant', content: `Gagal menghubungi AI. Pesan error server: ${data.error}` }]);
+      } else {
+        const aiMsg = data.text || 'AI tidak bisa membalas.';
+        setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+      }
     } catch (err) {
-      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi AI.' }]);
+      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi Serverless Function.' }]);
     }
     setLoading(false);
   };
@@ -253,15 +261,7 @@ function ChatAI() {
             ))}
           </select>
         </div>
-        {/* 4. HAPUS INPUT API KEY DI SINI */}
-        {/* <input
-          className="chatai-input"
-          type="password"
-          placeholder="Masukkan Gemini API Key..."
-          value={apiKey}
-          onChange={handleApiKeyChange}
-          style={{ width: '100%', marginBottom: 8, padding: 8, borderRadius: 4, border: '1px solid #bbb' }}
-        /> */}
+        {/* 5. INPUT API KEY SUDAH DIHAPUS DARI SINI */}
         <div
           ref={chatContainerRef}
           style={{ maxHeight: 180, overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: 4, padding: 8, marginBottom: 8 }}
