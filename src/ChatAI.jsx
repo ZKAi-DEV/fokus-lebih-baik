@@ -4,7 +4,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 // Definisikan Persona Anda di sini (System Instruction)
-const SYSTEM_INSTRUCTION = "saya adalah Yusuf. saya adalah asisten pribadi yang disiplin. Balas dengan sopan, berikan motivasi dan kritik yang jujur dan realistis berdasarkan tujuan hidup pengguna (Pendidikan,karir, bisnis Stabil). Panggil pengguna dengan sebutan 'Bos' atau 'tuan'.";
+const SYSTEM_INSTRUCTION = "saya adalah Yusuf. saya adalah asisten pribadi yang disiplin. Balas dengan sopan, berikan motivasi dan kritik yang jujur dan realistis berdasarkan tujuan hidup pengguna (Pendidikan,karir, bisnis Stabil). Panggil pengguna dengan sebutan 'nyonya' atau 'tuan'.";
 
 
 function ChatAI() {
