@@ -1,23 +1,42 @@
-import React, { useState, useEffect } from 'react';
+// src/Dashboard.jsx (PUSAT KONTROL STATE DAN LOGIKA AI)
+
+import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from './firebase';
 import { collection, getDocs, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth'; 
 import ChatAI from './ChatAI';
 
-// Definisikan System Instruction Challenge di sini (Persona Pembuat Challenge)
-const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin. Tugas Anda adalah membuat 5 challenge harian yang relevan sesuai kebutuhan pengguna yang sedang di bicarakan di ChatAI entah itu pendidikan, karir atau bisnis. Output hanya 5 baris challenge tanpa penomoran.";
+// Definisikan Persona Anda di sini (System Instruction)
+const SYSTEM_INSTRUCTION_CHAT = "Anda adalah Yusuf. Anda adalah asisten pribadi yang disiplin. Balas dengan sopan, berikan motivasi dan kritik yang jujur dan realistis berdasarkan tujuan hidup pengguna: OJT Beckhoff/KNX, SNBT Teknik Elektro UGM, dan Keuangan Stabil (Cicilan Motor). Panggil pengguna dengan sebutan 'Bos' atau 'Atasan'.";
 
+// Instruksi Challenge Generator (Sekarang lebih spesifik!)
+const SYSTEM_INSTRUCTION_CHALLENGE = "Anda adalah AI pembuat challenge disiplin yang tahu semua tentang Yusuf (pengguna). Buatkan 5 challenge harian SPESIFIK yang membantu Yusuf mencapai tujuannya. Fokus hari ini: OJT di PT Inovasindo Smart System (pelajari PLC Beckhoff/KNX), SNBT (Teknik Elektro UGM), dan Bahasa Jepang (Duolingo). Jangan pernah memberikan saran di luar 5 baris challenge.";
+
+// Fungsi untuk mapping role (dari assistant ke model)
+const mapMessagesForGemini = (messages) => {
+    return messages.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user', 
+        parts: [{ text: msg.content }]
+    }));
+};
 
 function Dashboard() {
   const [rows, setRows] = useState([{ task: '', status: '', hari: '', tanggal: '' }]);
-  const [user, setUser] = useState(null);
+  const [messages, setMessages] = useState([]); // STATE CHAT HISTORY BARU DI SINI
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
   const [selectedDate, setSelectedDate] = useState(() => {
     const now = new Date();
     return now.toISOString().slice(0, 10); // YYYY-MM-DD
   });
-  // Hapus: const [aiKey, setAiKey] = useState(() => localStorage.getItem('openai_key') || '');
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // Logic Voice Chat di pindahkan
+  const recognitionRef = useRef(null);
+  const voiceLoopRef = useRef(false);
+  const [listening, setListening] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState(null);
+  const [voices, setVoices] = useState([]);
 
   // Helper untuk dapatkan hari dari tanggal
   const getHari = (dateStr) => {
@@ -25,58 +44,189 @@ function Dashboard() {
     return date.toLocaleDateString('id-ID', { weekday: 'long' });
   };
 
-  // Ambil user yang sedang login
+  // 1. Load Chat History & Task History
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) setUser(u);
-      else setUser(null);
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      
+      if (u) {
+        // Load Chat History
+        const docRefChat = doc(db, 'users', u.uid, 'chatHistory', 'history');
+        const snapChat = await getDoc(docRefChat);
+        if (snapChat.exists()) setMessages(snapChat.data().messages || []);
+        else setMessages([]);
+        
+        // Load Task History for selectedDate (Task loading logic tetap sama)
+        const docRefTask = doc(db, 'users', u.uid, 'tasks', selectedDate);
+        const snapTask = await getDoc(docRefTask);
+        if (snapTask.exists()) {
+            const loadedRows = (snapTask.data().rows || []).filter(row => row.task || row.status);
+            setRows(loadedRows.length > 0 ? loadedRows : [{ task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }]);
+        } else {
+            setRows([{ task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }]);
+        }
+        setLoading(false);
+        
+      } else {
+        // User LOGOUT: Kosongkan semua state
+        setMessages([]);
+        setRows([{ task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }]);
+        setLoading(true);
+      }
     });
     return () => unsub();
-  }, []);
+  }, [selectedDate]);
 
-  // Hapus data lebih dari 7 hari
+  // Simpan chat history ke Firestore setiap kali messages berubah
   useEffect(() => {
-    if (!user) return;
-    const cleanOldData = async () => {
-      const colRef = collection(db, 'users', user.uid, 'tasks');
-      const snap = await getDocs(colRef);
-      const today = new Date();
-      await Promise.all(snap.docs.map(async (d) => {
-        const tgl = d.id; // id = YYYY-MM-DD
-        const diff = (today - new Date(tgl)) / (1000 * 60 * 60 * 24);
-        if (diff > 7) await deleteDoc(doc(colRef, tgl));
-      }));
+    const saveHistory = async () => {
+      if (user && messages.length > 0) {
+        const docRef = doc(db, 'users', user.uid, 'chatHistory', 'history');
+        await setDoc(docRef, { messages });
+      }
     };
-    cleanOldData();
-  }, [user]);
+    if (user && messages.length > 0) saveHistory();
+  }, [messages, user]);
+  
+  // Logic Speech Recognition dan TTS (ditempatkan di sini)
+  useEffect(() => {
+    const updateVoices = () => {
+        const vs = window.speechSynthesis.getVoices();
+        setVoices(vs);
+        if (selectedVoice === null && vs.length > 0) {
+            const v = vs.find(v => v.lang.startsWith('id')) || vs[0];
+            setSelectedVoice(v?.name || vs[0].name);
+        }
+    };
+    updateVoices();
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, [selectedVoice]);
 
-  // Fungsi generate challenge AI otomatis (sudah aman)
-  const generateChallengeAI = async (tanggal) => {
-    // HAPUS: if (!aiKey) alert('Masukkan Gemini API Key di chat AI dulu!'); return;
+  // Text-to-Speech untuk balasan AI
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === 'assistant' && voiceLoopRef.current) {
+        const utter = new window.SpeechSynthesisUtterance(lastMsg.content);
+        utter.lang = 'id-ID';
+        const vs = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
+        utter.voice = vs.find(v => v.name === selectedVoice) || vs[0];
+        utter.onend = () => { if (voiceLoopRef.current) startListening(); };
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+    }
+  }, [messages, voices, selectedVoice]);
 
+
+  // FUNGSI UTAMA PENGIRIMAN PESAN CHAT (sudah aman)
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!e.target.input.value.trim()) return; 
+
+    const inputVal = e.target.input.value;
+    const newMessages = [...messages, { role: 'user', content: inputVal }];
+    setMessages(newMessages);
     setAiLoading(true);
+    
     try {
-      // Kirim prompt spesifik + persona ke Server
-      const prompt = `Buatkan 5 challenge harian bertema disiplin dan pengembangan diri harian yang relevan sesuai kebutuhan pengguna yang sedang di bicarakan di ChatAI entah itu pendidikan, karir atau bisnis untuk tanggal ${tanggal}, singkat, actionable, dan berbeda dari hari lain. Format: satu challenge per baris, tanpa penomoran.`;
+      // Kirim history chat dan System Instruction ke Serverless Function
+      const geminiMessages = mapMessagesForGemini(newMessages);
       
+      const res = await fetch('/api/gemini', 
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: geminiMessages,
+            systemInstruction: SYSTEM_INSTRUCTION_CHAT, 
+          })
+        }
+      );
+      
+      const data = await res.json();
+      
+      const aiMsg = data.text || `Gagal menghubungi AI. Pesan error server: ${data.error}`;
+      setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+      e.target.input.value = ''; // Clear input field
+    } catch (err) {
+      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi Serverless Function.' }]);
+    }
+    setAiLoading(false);
+  };
+  
+  // Voice Chat Logic (disertakan di sini)
+  const startListening = () => {
+    if (!('webkitSpeechRecognition' in window)) { alert('Browser kamu belum support voice input!'); return; }
+    setListening(true);
+    recognitionRef.current = new window.webkitSpeechRecognition();
+    recognitionRef.current.lang = 'id-ID';
+    recognitionRef.current.interimResults = false;
+    recognitionRef.current.maxAlternatives = 1;
+    recognitionRef.current.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setListening(false);
+        sendVoiceMessage(transcript);
+    };
+    recognitionRef.current.onend = () => { setListening(false); };
+    recognitionRef.current.start();
+  };
+  const stopListening = () => { setListening(false); if (recognitionRef.current) recognitionRef.current.stop(); };
+  const startVoiceChat = () => { voiceLoopRef.current = true; startListening(); };
+  const stopVoiceChat = () => { voiceLoopRef.current = false; stopListening(); window.speechSynthesis.cancel(); };
+
+  const sendVoiceMessage = async (text) => {
+    if (!text.trim()) return; 
+    const newMessages = [...messages, { role: 'user', content: text }];
+    setMessages(newMessages);
+    setAiLoading(true);
+    
+    try {
+      const geminiMessages = mapMessagesForGemini(newMessages);
+      
+      const res = await fetch('/api/gemini', 
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: geminiMessages, systemInstruction: SYSTEM_INSTRUCTION_CHAT })
+        }
+      );
+      const data = await res.json();
+      const aiMsg = data.text || `Gagal menghubungi AI. Pesan error server: ${data.error}`;
+      setMessages([...newMessages, { role: 'assistant', content: aiMsg }]);
+    } catch (err) {
+      setMessages([...newMessages, { role: 'assistant', content: 'Gagal menghubungi Serverless Function.' }]);
+    }
+    setAiLoading(false);
+  };
+
+
+  // Fungsi generate challenge AI otomatis (SEKARANG MENGIRIM FULL HISTORY)
+  const generateChallengeAI = async (tanggal) => {
+    setAiLoading(true);
+    
+    // Konversi chat history menjadi string prompt untuk memberi konteks pada AI
+    const historyContext = messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+    const challengePrompt = `Berdasarkan riwayat obrolan di bawah ini (yang berisi tujuan, kesulitan, dan rencana pengguna), buatkan 5 challenge harian SPESIFIK untuk tanggal ${tanggal}. Format: satu challenge per baris, tanpa penomoran. \n\nRIWAYAT OBROLAN:\n${historyContext}`;
+    
+    try {
       const res = await fetch(
         '/api/gemini', // Panggil Serverless Function
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            // Mengirim prompt sebagai user message pertama
+            // HANYA MENGIRIM 1 PROMPT UNTUK GENERASI CHALLENGE
             contents: [
-              { role: "user", parts: [{ text: prompt }] } 
+              { role: "user", parts: [{ text: challengePrompt }] } 
             ],
-            // Mengirim System Instruction ke Server
-            systemInstruction: SYSTEM_INSTRUCTION_CHALLENGE, 
+            systemInstruction: SYSTEM_INSTRUCTION_CHALLENGE, // Mengirim System Instruction Generator
           })
         }
       );
       
       const data = await res.json();
-      const text = data.text || ''; // Ambil data.text dari response server
+      const text = data.text || 'Gagal menghasilkan challenge dari AI.';
       
       const challenges = text
         .split('\n')
@@ -90,26 +240,7 @@ function Dashboard() {
     setAiLoading(false);
   };
 
-  // Load data dari Firestore untuk tanggal yang dipilih
-  useEffect(() => {
-    if (!user || !selectedDate) return;
-    setLoading(true);
-    const fetchData = async () => {
-      const docRef = doc(db, 'users', user.uid, 'tasks', selectedDate);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const loadedRows = (snap.data().rows || []).filter(row => row.task || row.status);
-        setRows(loadedRows.length > 0 ? loadedRows : [{ task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }]);
-      } else {
-        setRows([{ task: '', status: '', hari: getHari(selectedDate), tanggal: selectedDate }]);
-      }
-      setLoading(false);
-    };
-    fetchData();
-    // eslint-disable-next-line
-  }, [user, selectedDate]);
-
-  // Simpan data ke Firestore setiap kali rows berubah
+  // Simpan data ke Firestore setiap kali rows berubah (Task loading logic tetap sama)
   useEffect(() => {
     if (!user || !selectedDate || loading) return;
     // Cegah simpan data jika rows bukan untuk tanggal aktif
@@ -119,24 +250,12 @@ function Dashboard() {
       await setDoc(docRef, { rows });
     };
     saveData();
-    // eslint-disable-next-line
   }, [rows, user, selectedDate, loading]);
-
-  // HAPUS LOGIC INI (aiKey localStorage):
-  /*
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAiKey(localStorage.getItem('openai_key') || '');
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-  */
 
   // Handler input baris
   const handleChange = (idx, field, value) => {
     const newRows = [...rows];
     newRows[idx][field] = value;
-    // Pastikan tanggal baris selalu sama dengan selectedDate
     newRows[idx].tanggal = selectedDate;
     newRows[idx].hari = getHari(selectedDate);
     setRows(newRows);
@@ -174,15 +293,31 @@ function Dashboard() {
     URL.revokeObjectURL(url);
   };
 
-  // Tombol manual tetap ada, panggil generateChallengeAI(selectedDate)
   const handleGenerateAI = () => generateChallengeAI(selectedDate);
 
+  // Jika user belum login atau data belum dimuat, tampilkan loading/redirect
   if (!user) return <div style={{position:'fixed',left:0,top:0,width:'100vw',height:'100vh',display:'flex',justifyContent:'center',alignItems:'center',fontSize:32,fontWeight:600,color:'#234',zIndex:999}}>Loading...</div>;
   if (loading) return <div style={{position:'fixed',left:0,top:0,width:'100vw',height:'100vh',display:'flex',justifyContent:'center',alignItems:'center',fontSize:32,fontWeight:600,color:'#234',zIndex:999}}>Memuat data...</div>;
 
   return (
     <>
-      <ChatAI />
+      <ChatAI 
+        messages={messages}
+        handleSend={handleSend}
+        loading={aiLoading}
+        input={messages.length > 0 ? '' : ''} // Set input to null since handled by handleSend
+        setInput={() => {}} // Dummy input setter
+        voices={voices}
+        selectedVoice={selectedVoice}
+        setSelectedVoice={setSelectedVoice}
+        startListening={startListening}
+        stopListening={stopListening}
+        startVoiceChat={startVoiceChat}
+        stopVoiceChat={stopVoiceChat}
+        listening={listening}
+        voiceLoopRef={voiceLoopRef}
+      />
+      
       <div style={{ width: '100vw', minHeight: '100vh', padding: '32px 2vw 32px 2vw', boxSizing: 'border-box', background: '#fafbfc', overflowX: 'hidden' }}>
         <style>{`
           @media (max-width: 700px) {
